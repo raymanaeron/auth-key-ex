@@ -117,7 +117,7 @@ func authenticate(w http.ResponseWriter, r *http.Request) {
 
 		authResponse := common.AuthResponse{
 			Authenticated:   isAuthenticated,
-			Token:           "dummy_token", // In a real scenario, generate a proper token.
+			Token:           tokenString, 
 			ServerPublicKey: serverKeyPair.PublicKey
 		}
 	} else {
