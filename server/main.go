@@ -109,7 +109,7 @@ func authenticate(w http.ResponseWriter, r *http.Request) {
 		})
 
 		// Sign the token with the server's RSA private key
-		tokenString, err := token.SignedString(serverPrivateKey)
+		tokenString, err := token.SignedString(serverKeyPair.PrivateKey)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error signing token: %v", err), http.StatusInternalServerError)
 			return
