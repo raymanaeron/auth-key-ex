@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 	"github.com/golang-jwt/jwt/v5"
-	"auth-key-exchange/common"
+	"auth-key-ex/common"
 )
 
 // Private variable to hold the list of keypairs for clientss
@@ -126,9 +126,9 @@ func authenticate(w http.ResponseWriter, r *http.Request) {
 	// Print out the passed in AuthRequest object
 	fmt.Printf("Received AuthRequest: %+v\n", authRequest)
 
-	// Validate the Username and ClientPublicKey fields
-	if authRequest.Username == "" || authRequest.ClientPublicKey == "" {
-		http.Error(w, "Username and ClientPublicKey cannot be empty", http.StatusBadRequest)
+	// Validate the Username 
+	if authRequest.Username == "" {
+		http.Error(w, "Username cannot be empty", http.StatusBadRequest)
 		return
 	}
 

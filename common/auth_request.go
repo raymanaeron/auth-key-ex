@@ -4,5 +4,4 @@ package common
 type AuthRequest struct {
 	Username       string `json:"username"`
 	Encrypted      string `json:"encrypted"`
-	ClientPublicKey string `json:"clientPublicKey"`
 }
