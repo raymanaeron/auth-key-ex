@@ -1,5 +1,5 @@
-module auth-key-exchange
+module auth-key-ex
 
-go 1.22.5
+go 1.21.6
 
-require github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
+require github.com/golang-jwt/jwt/v5 v5.2.1
