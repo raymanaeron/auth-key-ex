@@ -17,6 +17,8 @@ func main() {
     }
     localKeyPair = keyPair
 
+    fmt.Println(string(localKeyPair.PublicKey))
+
     testEncryptAndDecrypt()
 }
 
