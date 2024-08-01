@@ -88,3 +88,18 @@ func DecryptWithPrivateKey(data []byte, privateKeyPEM []byte) ([]byte, error) {
 
     return decryptedBytes, nil
 }
+
+// ParsePrivateKey parses an RSA private key from a PEM encoded byte slice
+func ParsePrivateKey(privateKeyPEM []byte) (*rsa.PrivateKey, error) {
+    block, _ := pem.Decode(privateKeyPEM)
+    if block == nil || block.Type != "RSA PRIVATE KEY" {
+        return nil, errors.New("failed to decode PEM block containing private key")
+    }
+
+    privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+    if err != nil {
+        return nil, err
+    }
+
+    return privateKey, nil
+}

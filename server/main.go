@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 	"github.com/golang-jwt/jwt/v5"
 	"auth-key-exchange/common"
 )
@@ -16,6 +17,7 @@ var clientPublicKeyList = []common.ClientPublicKeyMap{}
 var serverKeyPairList = []common.ServerKeyPairMap{}
 
 func main() {
+	http.HandleFunc("/api/pubkey", getPublicKey)
 	http.HandleFunc("/api/auth", authenticate)
 	http.HandleFunc("/api/keypair", generateKeyPair)
 
@@ -26,6 +28,86 @@ func main() {
 	}
 }
 
+// Client call this function to generate a unique keypair for the client
+// The public key is sent to the client while server holds on to the private key
+func getPublicKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Read the query parameter named username
+	username := r.URL.Query().Get("username")
+	if username == "" {
+		http.Error(w, "Username parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Find the server public key for the given username
+	publicKey, err := getServerPublicKeyForUser(username)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error retrieving public key: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Return the public key as JSON
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"publicKey": publicKey})
+}
+
+// Find the public key from the in memory list
+// If found return it otherwise generate one and update the list
+func getServerPublicKeyForUser(username string) (string, error) {
+	for _, keyPair := range serverKeyPairList {
+		if keyPair.Username == username {
+			return string(keyPair.PublicKey), nil
+		}
+	}
+
+	// Username does not exist, generate a new key pair
+	newKeyPair, err := common.GenerateKeyPair()
+	if err != nil {
+		return "", fmt.Errorf("error generating new key pair: %v", err)
+	}
+
+	// Add the new key pair to the list
+	serverKeyPairList = append(serverKeyPairList, common.ServerKeyPairMap{
+		Username:  username,
+		PublicKey: newKeyPair.PublicKey,
+		PrivateKey: newKeyPair.PrivateKey,
+	})
+
+	return string(newKeyPair.PublicKey), nil
+}
+
+func getServerKeysForUser(username string) (common.ServerKeyPairMap, error) {
+	var skp common.ServerKeyPairMap
+
+	for _, kp := range serverKeyPairList {
+		if kp.Username == username {
+			skp.Username = kp.Username
+			skp.PublicKey = kp.PublicKey
+			skp.PrivateKey = kp.PrivateKey
+
+			return skp, nil
+		}
+	}
+
+	// Username does not exist, generate a new key pair
+	newKeyPair, err := common.GenerateKeyPair()
+	if err != nil {
+		return skp, fmt.Errorf("error generating new key pair: %v", err)
+	}
+
+	skp.Username = username
+	skp.PublicKey = newKeyPair.PublicKey
+	skp.PrivateKey = newKeyPair.PrivateKey
+
+	// Add the new key pair to the list
+	serverKeyPairList = append(serverKeyPairList, skp)	
+	return skp, nil
+}
+
 // authenticate handles the authentication logic
 func authenticate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -34,6 +116,8 @@ func authenticate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var authRequest common.AuthRequest
+	var authResponse common.AuthResponse
+
 	err := json.NewDecoder(r.Body).Decode(&authRequest)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error decoding request: %v", err), http.StatusInternalServerError)
@@ -51,7 +135,7 @@ func authenticate(w http.ResponseWriter, r *http.Request) {
 
 	isAuthenticated := false
 	// TODO: Database Check
-	if authRequest.Username == "test" && authRequest.encrypted != "" {
+	if authRequest.Username == "test" && authRequest.Encrypted != "" {
 		isAuthenticated = true
 	}
 
@@ -75,31 +159,17 @@ func authenticate(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
-		// Check if server keypair exist for this user
-		serverKeyPair, err := common.GenerateKeyPair()
+		serverKeyPair, err := getServerKeysForUser(authRequest.Username)
 		if err != nil {
-			fmt.Println("Error generating server key pair:", err)
+			http.Error(w, fmt.Sprintf("Error creating/retriving server key pair: %v", err), http.StatusInternalServerError)
 			return
 		}
-		
-		server_keypair_found := false
-		for i, k := range serverKeyPairList {
-			if k.Username == authRequest.Username {
-				// Entry exists so update the keys
-				serverKeyPairList[i].PublicKey = serverKeyPair.PublicKey
-				serverKeyPairList[i].PrivateKey = serverKeyPair.PrivateKey
-				server_keypair_found = true
-				break
-			}	
-		}
 
-		// Entry does not exist so append a new one
-		if !server_keypair_found {
-			serverKeyPairList = append(serverKeyPairList, common.ServerKeyPairMap {
-				Username: authRequest.Username,
-				PublicKey: serverKeyPair.PublicKey,
-				PrivateKey: serverKeyPair.PrivateKey,
-			})
+		// Parse the PEM-encoded private key
+		privateKey, err := common.ParsePrivateKey(serverKeyPair.PrivateKey)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error parsing private key: %v", err), http.StatusInternalServerError)
+			return
 		}
 
 		// create a jwt token
@@ -109,23 +179,20 @@ func authenticate(w http.ResponseWriter, r *http.Request) {
 		})
 
 		// Sign the token with the server's RSA private key
-		tokenString, err := token.SignedString(serverKeyPair.PrivateKey)
+		tokenString, err := token.SignedString(privateKey)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error signing token: %v", err), http.StatusInternalServerError)
 			return
 		}
 
-		authResponse := common.AuthResponse{
-			Authenticated:   isAuthenticated,
-			Token:           tokenString, 
-			ServerPublicKey: serverKeyPair.PublicKey
-		}
+		authResponse.Authenticated = isAuthenticated
+		authResponse.Token = tokenString
+		authResponse.ServerPublicKey = string(serverKeyPair.PublicKey)
+
 	} else {
-		authResponse := common.AuthResponse{
-			Authenticated:   false,
-			Token:           "", 
-			ServerPublicKey: ""
-		}
+		authResponse.Authenticated = false
+		authResponse.Token = ""
+		authResponse.ServerPublicKey = ""
 	}
 
 	// Return the AuthResponse as JSON
