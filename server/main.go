@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/grandcat/zeroconf"
 	"auth-key-ex/common"
 )
 
@@ -24,6 +25,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
+
+	// mDNS
+	// Advertise the service via mDNS
+    server, err := zeroconf.Register("GoServer", "_http._tcp", "local.", 4311, nil, nil)
+    if err != nil {
+        log.Fatalln("Failed to register service:", err)
+    }
+    defer server.Shutdown()
+
+    // Keep the server running
+    select {}
+	// end mDNS
 }
 
 // Client calls this function to generate a unique keypair for the client
